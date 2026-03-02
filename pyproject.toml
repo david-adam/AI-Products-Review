@@ -1,0 +1,30 @@
+[project]
+name = "scraper-api"
+version = "0.1.0"
+description = "ScraperAPI adapter for Amazon product scraping with Keepa-compatible interface"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+scraper-api = "scraper_api:main"
+
+[build-system]
+requires = "hatchling"
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
