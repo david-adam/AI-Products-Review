@@ -3,7 +3,7 @@
  * Endpoint: /api/products
  */
 
-const { createClient } = require('@libsql/client');
+import { createClient } from '@libsql/client';
 
 export default async function handler(req, res) {
   // Set CORS headers
