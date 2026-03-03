@@ -10,7 +10,5 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ],
-  "buildCommand": "npm install @libsql/client",
-  "installCommand": "npm install"
+  ]
 }

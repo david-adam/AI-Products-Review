@@ -1,0 +1,17 @@
+{
+  "name": "scraper-api",
+  "version": "1.0.0",
+  "description": "Affiliate site with Turso database integration",
+  "main": "api/products.js",
+  "type": "module",
+  "scripts": {
+    "start": "vercel dev",
+    "build": "echo 'No build step required'"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.6.0"
+  },
+  "devDependencies": {
+    "vercel": "^32.0.0"
+  }
+}
