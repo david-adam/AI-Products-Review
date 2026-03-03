@@ -1,12 +1,7 @@
 {
   "version": 2,
   "public": true,
-  "outputDirectory": ".",
   "rewrites": [
-    {
-      "source": "/api/products",
-      "destination": "/api/products.js"
-    },
     {
       "source": "/(.*)",
       "destination": "/$1"
