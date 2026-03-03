@@ -26,6 +26,12 @@ export default async function handler(req, res) {
     if (!authToken) {
       return res.status(500).json({ error: 'TURSO_AUTH_TOKEN not configured' });
     }
+    
+    // Debug: Log environment variable status (remove in production)
+    console.log('TURSO_AUTH_TOKEN present:', !!authToken);
+    console.log('TURSO_AUTH_TOKEN length:', authToken ? authToken.length : 0);
+    console.log('TURSO_AUTH_TOKEN prefix:', authToken ? authToken.substring(0, 50) : 'N/A');
+    console.log('TURSO_DATABASE_URL:', dbUrl);
 
     // Convert libsql:// to https:// for HTTP API (same as Python client)
     const httpUrl = dbUrl.replace('libsql://', 'https://');
