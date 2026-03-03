@@ -3,8 +3,14 @@
   "public": true,
   "rewrites": [
     {
+      "source": "/api/products",
+      "destination": "/api/products.js"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "buildCommand": "npm install @libsql/client",
+  "installCommand": "npm install"
 }
