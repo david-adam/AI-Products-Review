@@ -1,9 +1,8 @@
 /*
  * Vercel Serverless Function: Get Products from Turso
  * Endpoint: /api/products
+ * Uses Turso HTTP API (same approach as Python client)
  */
-
-import { createClient } from '@libsql/client';
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -22,38 +21,56 @@ export default async function handler(req, res) {
   try {
     // Get Turso credentials from environment
     const dbUrl = process.env.TURSO_DATABASE_URL || 'libsql://amazon-affiliate-david-adam.aws-ap-northeast-1.turso.io';
-    const authToken = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzI0MzMzNTMsImlkIjoiMDE5Y2FkNDEtZmUwMS03NzI4LTgyMGUtOGU1ZDBiZmJmZThjIiwicmlkIjoiYmJmZWUyMjYtZTI1NS00NmYxLThiZjktNzdiNTk3YWQ0NzA4In0.dRhrBVMddMlLt2PxrE766MRbRQE15wmtO6pNub4yxOvsr2MwjmeMTwzjINFqNUtQ4k6DW5hHBjettS3X-IVbDw';
+    const authToken = process.env.TURSO_AUTH_TOKEN;
 
     if (!authToken) {
       return res.status(500).json({ error: 'TURSO_AUTH_TOKEN not configured' });
     }
 
-    // Create Turso client
-    const client = createClient({
-      url: dbUrl,
-      authToken: authToken
-    });
-
-    // Query products
+    // Convert libsql:// to https:// for HTTP API (same as Python client)
+    const httpUrl = dbUrl.replace('libsql://', 'https://');
+    
     const limit = parseInt(req.query.limit) || 50;
-    const result = await client.execute({
-      sql: 'SELECT * FROM products ORDER BY created_at DESC LIMIT ?',
-      args: [limit]
+    
+    // Build the request body - use literal LIMIT for now (params binding had issues)
+    const requestBody = {
+      statements: [
+        {
+          q: `SELECT id, asin, title, price, rating, reviews, image, affiliate_link, search_query, created_at FROM products ORDER BY created_at DESC LIMIT ${limit}`
+        }
+      ]
+    };
+
+    // Execute query using Turso HTTP API
+    const response = await fetch(httpUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
     });
 
-    // Transform to array of objects
-    const products = result.rows.map(row => ({
-      id: row.id,
-      asin: row.asin,
-      title: row.title,
-      price: row.price,
-      rating: row.rating,
-      reviews: row.reviews,
-      image: row.image,
-      affiliate_link: row.affiliate_link,
-      search_query: row.search_query,
-      created_at: row.created_at
-    }));
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Turso HTTP API error: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json();
+    
+    // Parse the response - Turso HTTP API returns results in different format
+    // Each statement result is in result[0].results.rows
+    const products = [];
+    if (result && result[0] && result[0].results && result[0].results.rows) {
+      const columns = result[0].results.columns;
+      for (const row of result[0].results.rows) {
+        const product = {};
+        columns.forEach((col, idx) => {
+          product[col] = row[idx];
+        });
+        products.push(product);
+      }
+    }
 
     return res.status(200).json({
       success: true,
