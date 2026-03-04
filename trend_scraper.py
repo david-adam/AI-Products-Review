@@ -2,16 +2,24 @@
 """
 Trending Product Discovery Pipeline
 Scrapes Amazon Best Sellers, Google Trends, Reddit, and more to find trending products
+Uses Turso remote database (no local SQLite)
 """
 
 import requests
 from bs4 import BeautifulSoup
 import json
-import sqlite3
 from datetime import datetime, timedelta
 import time
 import logging
 import re
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Import Turso HTTP client
+from turso_http_client import TursoTrendingDB
 
 # Setup logging
 logging.basicConfig(
@@ -24,65 +32,91 @@ logger = logging.getLogger(__name__)
 class TrendingProductScraper:
     """Discover trending products from multiple sources"""
     
-    def __init__(self, db_path='trending_products.db'):
-        self.db_path = db_path
-        self.init_database()
+    def __init__(self, db_url=None, auth_token=None):
+        """
+        Initialize scraper with Turso database
+        
+        Args:
+            db_url: Turso database URL
+            auth_token: Turso auth token
+        """
+        # Initialize Turso database
+        self.db = TursoTrendingDB(
+            db_url=db_url or os.getenv('TURSO_DATABASE_URL'),
+            auth_token=auth_token or os.getenv('TURSO_AUTH_TOKEN')
+        )
+        self.db.create_table()
+        
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
     
-    def init_database(self):
-        """Initialize SQLite database for trending products"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+    def _is_valid_title(self, text: str) -> bool:
+        """
+        Validate if text looks like a product title
         
-        # Products table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS trending_products (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                asin TEXT UNIQUE NOT NULL,
-                title TEXT,
-                category TEXT,
-                amazon_rank INTEGER,
-                price REAL,
-                rating REAL,
-                google_trend_score INTEGER,
-                reddit_mentions INTEGER,
-                youtube_views INTEGER,
-                tiktok_views INTEGER,
-                total_score REAL,
-                discovered_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        Args:
+            text: Text to validate
+            
+        Returns:
+            True if valid product title
+        """
+        if not text or len(text) < 3:
+            return False
+        if len(text) > 300:  # Too long
+            return False
+        # Filter out known bad patterns
+        bad_patterns = [
+            '$', 'out of', 'stars', 'rating', 'review',
+            'Check each product', 'Visit the', 'Learn more',
+            'Add to', 'Buy now', 'Best Seller', '#', 'See more',
+            'Click to', 'Free shipping', 'Prime delivery'
+        ]
+        text_lower = text.lower()
+        return not any(p.lower() in text_lower for p in bad_patterns)
+    
+    def _extract_title(self, card, asin: str) -> str:
+        """
+        Extract product title with multiple fallback strategies
         
-        # Trend history table (for tracking changes)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS trend_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                asin TEXT NOT NULL,
-                rank INTEGER,
-                score REAL,
-                date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (asin) REFERENCES trending_products(asin)
-            )
-        ''')
+        Args:
+            card: BeautifulSoup element for product card
+            asin: Product ASIN for fallback
+            
+        Returns:
+            Product title string
+        """
+        # Layer 1: Try structured selectors (Amazon's semantic markup)
+        selectors = [
+            'h2 a span',                              # Standard grid
+            'h2 span',                                # Alternative grid
+            '.p13n-sc-truncated',                     # Legacy truncated
+            '._cDEzb_p13n-sc-css-line-clamp-3_g3DGQ', # Current grid v1
+            '._cDEzb_p13n-sc-css-line-clamp-2_g3DGQ', # Current grid v2
+            '.a-size-base-plus',                      # Large text variant
+            '.a-size-medium',                         # Medium text variant
+            '[data-cy="title-recipe-title"] span',    # New data attribute
+            'h2 a',                                   # Direct h2 link
+        ]
         
-        # Price history table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS price_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                asin TEXT NOT NULL,
-                price REAL NOT NULL,
-                date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (asin) REFERENCES trending_products(asin)
-            )
-        ''')
+        for selector in selectors:
+            elem = card.select_one(selector)
+            if elem:
+                title = elem.get_text(strip=True)
+                if self._is_valid_title(title):
+                    return title
         
-        conn.commit()
-        conn.close()
-        logger.info("✅ Database initialized")
+        # Layer 2: Heuristic extraction - find longest valid text node
+        for elem in card.find_all(['span', 'a', 'div']):
+            text = elem.get_text(strip=True)
+            if self._is_valid_title(text) and len(text) > 10:
+                # Prefer longer titles (more descriptive)
+                if len(text) > 30:
+                    return text
+        
+        # Layer 3: Return ASIN-based placeholder only as last resort
+        return f"Product {asin}"
     
     def scrape_amazon_bestsellers(self, category='electronics', max_products=50):
         """
@@ -113,7 +147,7 @@ class TrendingProductScraper:
             soup = BeautifulSoup(response.content, 'lxml')
             products = []
             
-            # Find product cards
+            # Find product cards - Amazon uses data-asin for product IDs
             product_cards = soup.find_all('div', {'data-asin': True})
             
             for card in product_cards[:max_products]:
@@ -123,27 +157,8 @@ class TrendingProductScraper:
                     if not asin or len(asin) != 10:
                         continue
                     
-                    # Extract title - try multiple selectors (Amazon HTML structure changed)
-                    title = None
-                    for selector in [
-                        '.p13n-sc-truncated', 'h2 a.a-text-normal', 'h2 a span', 
-                        '.a-text-normal', '.a-size-medium a', '#title'
-                    ]:
-                        title_elem = card.select_one(selector)
-                        if title_elem:
-                            title = title_elem.get_text(strip=True)
-                            if title and len(title) > 5 and 'Check each product' not in title and 'Visit the' not in title:
-                                break
-                    
-                    # Fallback: try to find title in different ways
-                    if not title or title == 'N/A':
-                        title_elem = card.find('h2')
-                        if title_elem:
-                            span = title_elem.find('span')
-                            if span:
-                                title = span.get_text(strip=True)
-                    
-                    title = title if title else f"Amazon Product {asin}"
+                    # Extract title - using multi-layer extraction
+                    title = self._extract_title(card, asin)
                     
                     # Extract product image
                     image = None
@@ -160,59 +175,80 @@ class TrendingProductScraper:
                     
                     # Extract review count
                     reviews = 0
-                    reviews_elem = card.find('span', class_='a-size-small')
-                    if reviews_elem:
-                        reviews_text = reviews_elem.get_text(strip=True)
-                        # Handle formats like "1,234 reviews" or "1234"
-                        reviews_text = reviews_text.replace(',', '').replace('reviews', '').replace('review', '').strip()
-                        try:
-                            reviews = int(''.join(filter(str.isdigit, reviews_text)))
-                        except:
-                            reviews = 0
-                    
-                    # Fallback: try other review selectors
-                    if reviews == 0:
-                        review_link = card.find('a', class_='a-link-typography')
-                        if review_link:
-                            review_text = review_link.get_text(strip=True)
-                            match = re.search(r'([\d,]+)\s*reviews?', review_text, re.IGNORECASE)
+                    # Try multiple selectors for reviews
+                    review_selectors = [
+                        'span.a-size-small',
+                        '.a-link-typography',
+                        'a[href*="reviews"]',
+                        '.a-size-base'
+                    ]
+                    for selector in review_selectors:
+                        reviews_elem = card.select_one(selector)
+                        if reviews_elem:
+                            reviews_text = reviews_elem.get_text(strip=True)
+                            # Match patterns like "1,234" or "1234"
+                            match = re.search(r'([\d,]+)\s*(?:ratings?|reviews?)', reviews_text, re.IGNORECASE)
                             if match:
-                                reviews = int(match.group(1).replace(',', ''))
+                                try:
+                                    reviews = int(match.group(1).replace(',', ''))
+                                    break
+                                except:
+                                    pass
                     
                     # Extract rank
-                    rank_elem = card.find('span', class_='zg-badge-text')
                     rank = None
+                    rank_elem = card.find('span', class_='zg-badge-text')
                     if rank_elem:
                         rank_text = rank_elem.text.strip()
-                        # Extract number (e.g., "#1" -> 1)
-                        rank = int(''.join(filter(str.isdigit, rank_text)))
+                        rank_match = re.search(r'(\d+)', rank_text)
+                        if rank_match:
+                            rank = int(rank_match.group(1))
                     
                     # Extract price
-                    price_elem = card.find('span', class_='p13n-sc-price')
                     price = None
-                    if price_elem:
-                        price_text = price_elem.text.strip().replace('$', '').replace(',', '')
-                        try:
-                            price = float(price_text)
-                        except ValueError:
-                            price = None
+                    price_selectors = [
+                        'span.p13n-sc-price',
+                        'span.a-price-whole',
+                        'span.a-price .a-offscreen',
+                        '.a-price-range'
+                    ]
+                    for selector in price_selectors:
+                        price_elem = card.select_one(selector)
+                        if price_elem:
+                            price_text = price_elem.text.strip()
+                            # Extract number from price text
+                            price_match = re.search(r'[\d,]+\.?\d*', price_text.replace(',', ''))
+                            if price_match:
+                                try:
+                                    price = float(price_match.group().replace(',', ''))
+                                    break
+                                except:
+                                    pass
                     
                     # Extract rating
-                    rating_elem = card.find('span', class_='a-icon-alt')
                     rating = None
+                    rating_elem = card.find('span', class_='a-icon-alt')
                     if rating_elem:
                         rating_text = rating_elem.text.strip()
-                        # Extract "4.5 out of 5" -> 4.5
-                        try:
-                            rating = float(rating_text.split()[0])
-                        except (ValueError, IndexError):
-                            rating = None
+                        rating_match = re.search(r'([\d.]+)\s*out of', rating_text)
+                        if rating_match:
+                            try:
+                                rating = float(rating_match.group(1))
+                            except:
+                                pass
                     
                     # Generate affiliate link
                     affiliate_link = f"https://www.amazon.com/dp/{asin}?tag=dav7aug-20"
                     
-                    # Generate product summary (basic - could be enhanced with AI)
-                    product_summary = f"Trending {category} product ranked #{rank} on Amazon with ${price} price and {rating} rating."
+                    # Generate product summary
+                    product_summary = f"Trending {category} product"
+                    if rank:
+                        product_summary += f" ranked #{rank} on Amazon"
+                    if price:
+                        product_summary += f" with ${price:.2f} price"
+                    if rating:
+                        product_summary += f" and {rating} rating"
+                    product_summary += "."
                     
                     products.append({
                         'asin': asin,
@@ -356,10 +392,7 @@ class TrendingProductScraper:
         return score
     
     def save_to_database(self, products):
-        """Save trending products to database"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
+        """Save trending products to Turso database"""
         saved = 0
         updated = 0
         
@@ -374,108 +407,23 @@ class TrendingProductScraper:
             product['total_score'] = score
             
             try:
-                # Check if product exists
-                cursor.execute('SELECT id FROM trending_products WHERE asin = ?', (asin,))
-                existing = cursor.fetchone()
-                
-                if existing:
-                    # Update
-                    cursor.execute('''
-                        UPDATE trending_products 
-                        SET title = ?, category = ?, amazon_rank = ?, 
-                            price = ?, rating = ?, total_score = ?,
-                            image = ?, affiliate_link = ?, reviews = ?, product_summary = ?,
-                            last_updated = CURRENT_TIMESTAMP
-                        WHERE asin = ?
-                    ''', (
-                        product.get('title'),
-                        product.get('category'),
-                        product.get('amazon_rank'),
-                        product.get('price'),
-                        product.get('rating'),
-                        score,
-                        product.get('image'),
-                        product.get('affiliate_link'),
-                        product.get('reviews'),
-                        product.get('product_summary'),
-                        asin
-                    ))
-                    updated += 1
-                else:
-                    # Insert
-                    cursor.execute('''
-                        INSERT INTO trending_products 
-                        (asin, title, category, amazon_rank, price, rating, total_score,
-                         image, affiliate_link, reviews, product_summary)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        asin,
-                        product.get('title'),
-                        product.get('category'),
-                        product.get('amazon_rank'),
-                        product.get('price'),
-                        product.get('rating'),
-                        score,
-                        product.get('image'),
-                        product.get('affiliate_link'),
-                        product.get('reviews'),
-                        product.get('product_summary')
-                    ))
+                # Insert or update via Turso
+                result = self.db.insert_or_update_product(product)
+                if result:
+                    # Check if it was an insert or update by querying
+                    # For now, we'll count as saved
                     saved += 1
                 
-                # Save to history
-                cursor.execute('''
-                    INSERT INTO trend_history (asin, rank, score)
-                    VALUES (?, ?, ?)
-                ''', (asin, product.get('amazon_rank'), score))
-                
-            except sqlite3.IntegrityError:
-                logger.warning(f"⚠️ Duplicate ASIN: {asin}")
-                continue
             except Exception as e:
                 logger.error(f"❌ Error saving {asin}: {e}")
                 continue
         
-        conn.commit()
-        conn.close()
-        
-        logger.info(f"💾 Saved {saved} new, updated {updated} products to database")
+        logger.info(f"💾 Saved {saved} products to Turso database")
         return saved, updated
     
     def get_top_products(self, limit=20, min_score=50):
-        """Get top scoring products from database"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT asin, title, category, amazon_rank, price, rating, total_score,
-                   image, affiliate_link, reviews, product_summary
-            FROM trending_products
-            WHERE total_score >= ?
-            ORDER BY total_score DESC
-            LIMIT ?
-        ''', (min_score, limit))
-        
-        rows = cursor.fetchall()
-        conn.close()
-        
-        products = []
-        for row in rows:
-            products.append({
-                'asin': row[0],
-                'title': row[1],
-                'category': row[2],
-                'amazon_rank': row[3],
-                'price': row[4],
-                'rating': row[5],
-                'total_score': row[6],
-                'image': row[7],
-                'affiliate_link': row[8],
-                'reviews': row[9],
-                'product_summary': row[10]
-            })
-        
-        return products
+        """Get top scoring products from Turso database"""
+        return self.db.get_top_products(limit=limit, min_score=min_score)
     
     def export_for_scraper(self, output_file='trending_asins.txt'):
         """Export top ASINs for scraper to use"""
@@ -493,9 +441,9 @@ class TrendingProductScraper:
 
 def main():
     """Run daily trend scraping"""
-    logger.info("🚀 Starting Trending Product Discovery Pipeline")
+    logger.info("🚀 Starting Trending Product Discovery Pipeline (Turso)")
     
-    # Initialize scraper
+    # Initialize scraper with Turso
     scraper = TrendingProductScraper()
     
     # Scrape Amazon Best Sellers
@@ -518,10 +466,10 @@ def main():
                 product['google_trend_score'] = score
                 break
     
-    # Save to database
+    # Save to Turso database
     saved, updated = scraper.save_to_database(all_products)
     
-    # Get top products
+    # Get top products from Turso
     top_products = scraper.get_top_products(limit=20, min_score=50)
     
     logger.info(f"\n🎯 TOP 20 TRENDING PRODUCTS:")
@@ -533,6 +481,10 @@ def main():
     
     logger.info("\n✅ Trending product discovery complete!")
     logger.info("📄 Next: Use trending_asins.txt with your scraper")
+    
+    # Print Turso stats
+    stats = scraper.db.get_stats()
+    logger.info(f"\n📊 Turso Database Stats: {stats}")
 
 
 if __name__ == '__main__':
