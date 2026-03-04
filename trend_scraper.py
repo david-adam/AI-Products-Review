@@ -11,6 +11,7 @@ import sqlite3
 from datetime import datetime, timedelta
 import time
 import logging
+import re
 
 # Setup logging
 logging.basicConfig(
@@ -122,9 +123,61 @@ class TrendingProductScraper:
                     if not asin or len(asin) != 10:
                         continue
                     
-                    # Extract title
-                    title_elem = card.find('div', class_='p13n-sc-truncated')
-                    title = title_elem.text.strip() if title_elem else 'N/A'
+                    # Extract title - try multiple selectors (Amazon HTML structure changed)
+                    title = None
+                    for selector in [
+                        '.p13n-sc-truncated', 'h2 a.a-text-normal', 'h2 a span', 
+                        '.a-text-normal', '.a-size-medium a', '#title'
+                    ]:
+                        title_elem = card.select_one(selector)
+                        if title_elem:
+                            title = title_elem.get_text(strip=True)
+                            if title and len(title) > 5 and 'Check each product' not in title and 'Visit the' not in title:
+                                break
+                    
+                    # Fallback: try to find title in different ways
+                    if not title or title == 'N/A':
+                        title_elem = card.find('h2')
+                        if title_elem:
+                            span = title_elem.find('span')
+                            if span:
+                                title = span.get_text(strip=True)
+                    
+                    title = title if title else f"Amazon Product {asin}"
+                    
+                    # Extract product image
+                    image = None
+                    img_elem = card.find('img')
+                    if img_elem:
+                        image = img_elem.get('src') or img_elem.get('data-old-hi-res') or img_elem.get('data-a-dynamic-image')
+                        # Handle dynamic image JSON
+                        if image and image.startswith('{'):
+                            try:
+                                images_dict = json.loads(image.replace("'", '"'))
+                                image = list(images_dict.keys())[0] if images_dict else None
+                            except:
+                                image = None
+                    
+                    # Extract review count
+                    reviews = 0
+                    reviews_elem = card.find('span', class_='a-size-small')
+                    if reviews_elem:
+                        reviews_text = reviews_elem.get_text(strip=True)
+                        # Handle formats like "1,234 reviews" or "1234"
+                        reviews_text = reviews_text.replace(',', '').replace('reviews', '').replace('review', '').strip()
+                        try:
+                            reviews = int(''.join(filter(str.isdigit, reviews_text)))
+                        except:
+                            reviews = 0
+                    
+                    # Fallback: try other review selectors
+                    if reviews == 0:
+                        review_link = card.find('a', class_='a-link-typography')
+                        if review_link:
+                            review_text = review_link.get_text(strip=True)
+                            match = re.search(r'([\d,]+)\s*reviews?', review_text, re.IGNORECASE)
+                            if match:
+                                reviews = int(match.group(1).replace(',', ''))
                     
                     # Extract rank
                     rank_elem = card.find('span', class_='zg-badge-text')
@@ -155,9 +208,19 @@ class TrendingProductScraper:
                         except (ValueError, IndexError):
                             rating = None
                     
+                    # Generate affiliate link
+                    affiliate_link = f"https://www.amazon.com/dp/{asin}?tag=dav7aug-20"
+                    
+                    # Generate product summary (basic - could be enhanced with AI)
+                    product_summary = f"Trending {category} product ranked #{rank} on Amazon with ${price} price and {rating} rating."
+                    
                     products.append({
                         'asin': asin,
                         'title': title,
+                        'image': image,
+                        'affiliate_link': affiliate_link,
+                        'reviews': reviews,
+                        'product_summary': product_summary,
                         'category': category,
                         'amazon_rank': rank,
                         'price': price,
@@ -321,6 +384,7 @@ class TrendingProductScraper:
                         UPDATE trending_products 
                         SET title = ?, category = ?, amazon_rank = ?, 
                             price = ?, rating = ?, total_score = ?,
+                            image = ?, affiliate_link = ?, reviews = ?, product_summary = ?,
                             last_updated = CURRENT_TIMESTAMP
                         WHERE asin = ?
                     ''', (
@@ -330,6 +394,10 @@ class TrendingProductScraper:
                         product.get('price'),
                         product.get('rating'),
                         score,
+                        product.get('image'),
+                        product.get('affiliate_link'),
+                        product.get('reviews'),
+                        product.get('product_summary'),
                         asin
                     ))
                     updated += 1
@@ -337,8 +405,9 @@ class TrendingProductScraper:
                     # Insert
                     cursor.execute('''
                         INSERT INTO trending_products 
-                        (asin, title, category, amazon_rank, price, rating, total_score)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (asin, title, category, amazon_rank, price, rating, total_score,
+                         image, affiliate_link, reviews, product_summary)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         asin,
                         product.get('title'),
@@ -346,7 +415,11 @@ class TrendingProductScraper:
                         product.get('amazon_rank'),
                         product.get('price'),
                         product.get('rating'),
-                        score
+                        score,
+                        product.get('image'),
+                        product.get('affiliate_link'),
+                        product.get('reviews'),
+                        product.get('product_summary')
                     ))
                     saved += 1
                 
@@ -375,7 +448,8 @@ class TrendingProductScraper:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT asin, title, category, amazon_rank, price, rating, total_score
+            SELECT asin, title, category, amazon_rank, price, rating, total_score,
+                   image, affiliate_link, reviews, product_summary
             FROM trending_products
             WHERE total_score >= ?
             ORDER BY total_score DESC
@@ -394,7 +468,11 @@ class TrendingProductScraper:
                 'amazon_rank': row[3],
                 'price': row[4],
                 'rating': row[5],
-                'total_score': row[6]
+                'total_score': row[6],
+                'image': row[7],
+                'affiliate_link': row[8],
+                'reviews': row[9],
+                'product_summary': row[10]
             })
         
         return products

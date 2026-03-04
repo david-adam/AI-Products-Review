@@ -38,11 +38,11 @@ export default async function handler(req, res) {
     
     const limit = parseInt(req.query.limit) || 50;
     
-    // Build the request body - use literal LIMIT for now (params binding had issues)
+    // Build the request body - query from trending_products table with new columns
     const requestBody = {
       statements: [
         {
-          q: `SELECT id, asin, title, price, rating, reviews, image, affiliate_link, search_query, created_at FROM products ORDER BY created_at DESC LIMIT ${limit}`
+          q: `SELECT id, asin, title, price, rating, reviews, image, affiliate_link, product_summary, category, total_score FROM trending_products ORDER BY total_score DESC LIMIT ${limit}`
         }
       ]
     };
