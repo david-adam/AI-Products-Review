@@ -45,11 +45,11 @@ class TursoTrendingDB:
         Returns:
             Response JSON
         """
-        # Turso HTTP API expects 'statements' with 'q' key
+        # Turso HTTP API expects 'statements' with 'q' key and 'params' for args
         request_item = {"q": sql}
         
         if params:
-            request_item["args"] = params
+            request_item["params"] = params
         
         body = {"statements": [request_item]}
         
