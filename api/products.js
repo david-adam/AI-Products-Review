@@ -21,16 +21,23 @@ export default async function handler(req, res) {
   try {
     // Get Turso credentials from environment
     const dbUrl = process.env.TURSO_DATABASE_URL || 'libsql://amazon-affiliate-david-adam.aws-ap-northeast-1.turso.io';
-    const authToken = process.env.TURSO_AUTH_TOKEN;
+    let authToken = process.env.TURSO_AUTH_TOKEN;
 
     if (!authToken) {
       return res.status(500).json({ error: 'TURSO_AUTH_TOKEN not configured' });
     }
-    
+
+    // Clean up auth token (remove newlines and extra whitespace)
+    authToken = authToken.replace(/\s+/g, '').trim();
+
+    if (!authToken) {
+      return res.status(500).json({ error: 'TURSO_AUTH_TOKEN is empty after cleaning' });
+    }
+
     // Debug: Log environment variable status (remove in production)
     console.log('TURSO_AUTH_TOKEN present:', !!authToken);
-    console.log('TURSO_AUTH_TOKEN length:', authToken ? authToken.length : 0);
-    console.log('TURSO_AUTH_TOKEN prefix:', authToken ? authToken.substring(0, 50) : 'N/A');
+    console.log('TURSO_AUTH_TOKEN length:', authToken.length);
+    console.log('TURSO_AUTH_TOKEN prefix:', authToken.substring(0, 50));
     console.log('TURSO_DATABASE_URL:', dbUrl);
 
     // Convert libsql:// to https:// for HTTP API (same as Python client)
