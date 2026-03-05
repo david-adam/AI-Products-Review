@@ -55,6 +55,8 @@ export default async function handler(req, res) {
     };
 
     // Execute query using Turso HTTP API
+    console.log('Fetching from Turso:', httpUrl);
+
     const response = await fetch(httpUrl, {
       method: 'POST',
       headers: {
@@ -62,10 +64,14 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody)
+    }).catch(err => {
+      console.error('Fetch error:', err);
+      throw new Error(`fetch failed: ${err.message}`);
     });
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('Turso API error:', response.status, errorText);
       throw new Error(`Turso HTTP API error: ${response.status} - ${errorText}`);
     }
 
