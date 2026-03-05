@@ -166,6 +166,43 @@
             margin-bottom: 12px;
         }
 
+        .product-rating-stars {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            font-size: 18px;
+        }
+
+        .star {
+            color: #ddd;
+            margin-right: 2px;
+        }
+
+        .star.filled {
+            color: #f5a623;
+        }
+
+        .star.half {
+            background: linear-gradient(90deg, #f5a623 50%, #ddd 50%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .rating-number {
+            margin-left: 8px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .price-check-text {
+            font-size: 14px;
+            color: #666;
+            font-style: italic;
+            margin: 12px 0;
+            text-align: center;
+        }
+
         .affiliate-btn {
             display: block;
             width: 100%;
@@ -329,12 +366,18 @@
     <script>
         let allProducts = [];
 
-        // Fetch products from API
+        // Fetch products from Turso (with local fallback for network errors only)
         async function fetchProducts() {
             const grid = document.getElementById('productsGrid');
-            
+
             try {
+                // Try to fetch from Turso API
                 const response = await fetch('/api/products?limit=100');
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 const data = await response.json();
 
                 if (!data.success) {
@@ -346,15 +389,70 @@
                 updateStats(allProducts);
 
             } catch (error) {
-                console.error('Error fetching products:', error);
-                grid.innerHTML = `
-                    <div class="error-message">
-                        <h3>Oops! Something went wrong</h3>
-                        <p>${error.message}</p>
-                        <p style="margin-top: 10px; font-size: 14px;">Please try again later.</p>
-                    </div>
-                `;
+                console.error('Turso API error, trying local fallback:', error.message);
+
+                // Only use local fallback for network errors
+                try {
+                    const fallbackResponse = await fetch('products_with_content.json');
+                    const fallbackData = await fallbackResponse.json();
+
+                    // Transform local data format to match API format
+                    allProducts = fallbackData.map(item => ({
+                        id: item.id,
+                        asin: item.asin,
+                        title: item.title || 'N/A',
+                        price: item.price,
+                        rating: item.rating,
+                        reviews: item.reviews,
+                        image: item.image,
+                        affiliate_link: item.affiliate_link,
+                        product_summary: item.product_summary,
+                        category: item.search_query
+                    }));
+
+                    console.warn('⚠️ Using local fallback data. Run export_from_turso.py to sync with Turso.');
+                    renderProducts(allProducts);
+                    updateStats(allProducts);
+
+                    // Show warning message
+                    const warning = document.createElement('div');
+                    warning.style.cssText = 'background: #fff3cd; color: #856404; padding: 10px; margin: 20px; border-radius: 8px; text-align: center;';
+                    warning.innerHTML = '⚠️ <strong>Offline Mode:</strong> Using cached local data. Some products may be outdated.';
+                    grid.parentNode.insertBefore(warning, grid);
+
+                } catch (fallbackError) {
+                    console.error('Local fallback also failed:', fallbackError);
+                    grid.innerHTML = `
+                        <div class="error-message">
+                            <h3>❌ Unable to Load Products</h3>
+                            <p><strong>Turso API Error:</strong> ${error.message}</p>
+                            <p><strong>Local Cache:</strong> Not available</p>
+                            <p style="margin-top: 15px; font-size: 14px;">Please check your connection or run <code>export_from_turso.py</code> to update local cache.</p>
+                        </div>
+                    `;
+                }
             }
+        }
+
+        // Generate star rating HTML
+        function generateStars(rating) {
+            if (!rating) return '<div class="product-rating-stars"><span class="rating-number">No ratings</span></div>';
+            
+            const numRating = parseFloat(rating);
+            if (isNaN(numRating)) return '<div class="product-rating-stars"><span class="rating-number">No ratings</span></div>';
+            
+            let starsHtml = '';
+            for (let i = 1; i <= 5; i++) {
+                if (i <= numRating) {
+                    starsHtml += '<span class="star filled">★</span>';
+                } else if (i - 0.5 <= numRating) {
+                    starsHtml += '<span class="star half">★</span>';
+                } else {
+                    starsHtml += '<span class="star">★</span>';
+                }
+            }
+            
+            return `<div class="product-rating-stars">${starsHtml}<span class="rating-number">${numRating.toFixed(1)}</span></div>`;
         }
 
         // Render products to grid
@@ -377,19 +475,13 @@
                          alt="${escapeHtml(product.title)}" 
                          onerror="this.src='https://via.placeholder.com/200x180?text=No+Image'">
                     
-                    <div class="product-category">${escapeHtml(product.search_query || 'General')}</div>
+                    ${generateStars(product.rating)}
                     
                     <h3 class="product-title">${escapeHtml(product.title || 'Untitled Product')}</h3>
                     
                     ${product.product_summary ? `<p class="product-description">${escapeHtml(product.product_summary)}</p>` : ''}
                     
-                    <div class="product-meta">
-                        <span class="product-price">${product.price || 'N/A'}</span>
-                        <span class="product-rating">
-                            ★ ${product.rating || 'N/A'}
-                            <span class="product-reviews">(${product.reviews || 0} reviews)</span>
-                        </span>
-                    </div>
+                    <div class="price-check-text">💰 Check your price on Amazon</div>
                     
                     <a href="${product.affiliate_link || '#'}" class="affiliate-btn" target="_blank" rel="noopener noreferrer">
                         View on Amazon
