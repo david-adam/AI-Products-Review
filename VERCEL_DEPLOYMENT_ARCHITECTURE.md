@@ -79,19 +79,59 @@ git push origin main
 # Site updates automatically at: https://www.gadgets-review.space
 ```
 
-## Social Push Difference
+## Social Push Workflow
 
-### ✅ **Correctly Separated**
+### ✅ **Human Review Before Social Posting**
 
-**Local Machine Only:**
-- `social_push.py` - Pushes to Twitter, Facebook, etc.
-- Runs locally (cron job)
-- NOT on Vercel (no backend for social posting)
+**Step 1: Fetch from Turso**
+```bash
+# Local scraper fetches products from Turso cloud DB
+python3 trend_scraper.py
+```
 
-**Vercel Site:**
-- Read-only display of products
-- No social posting functionality
-- Just fetches and displays data from Turso
+**Step 2: Generate Content**
+```bash
+# Creates products_with_content.json with AI-generated:
+# - product_summary (200 words)
+# - social_post (Twitter/Telegram format)
+# - seo_title
+# - blog_outline
+```
+
+**Step 3: Human Review** ⭐ KEY STEP
+```bash
+# Humans review the static JSON file
+cat products_with_content.json
+
+# Edit if needed
+vim products_with_content.json
+```
+
+**Step 4: Social Push**
+```bash
+# Post reviewed content to social networks
+python3 social_push.py
+
+# Posts to:
+# - Telegram (bot)
+# - Twitter/X (if configured)
+# - Facebook (if configured)
+```
+
+### Files Involved
+
+**Local Only (NOT on Vercel):**
+- ✅ `products_with_content.json` - Static file with AI-generated content
+- ✅ `ai_generated_content.json` - Alternative format
+- ✅ `social_push.py` - Posts to social networks
+- ✅ Review workflow - Human checks content before posting
+
+**Why Static File?**
+- ✅ Humans can review and edit before posting
+- ✅ Version control (git track changes)
+- ✅ Audit trail (what was posted when)
+- ✅ Quality control (catch AI mistakes)
+- ✅ Consistency (same format for all posts)
 
 ## Files to Deploy
 
