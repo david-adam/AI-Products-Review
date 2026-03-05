@@ -40,3 +40,10 @@ htmlcov/
 *.swo
 *~
 .vercel
+
+# Local Admin Tools (DO NOT DEPLOY TO VERCEL)
+social_push.html
+products_with_content.json
+ai_generated_content.json
+products_scraped.json
+logs/
