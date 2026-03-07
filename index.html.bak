@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon Affiliate Bot - AI-Powered Product Discovery</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <meta name="description" content="AI-powered Amazon affiliate product discovery. Find trending products, generate reviews, and automate social media marketing.">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 20px;
+            padding: 60px 40px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        h1 {
+            color: #667eea;
+            font-size: 48px;
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+
+        .tagline {
+            color: #6c757d;
+            font-size: 20px;
+            margin-bottom: 40px;
+        }
+
+        .cta-button {
+            display: inline-block;
+            padding: 16px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 18px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .feature-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .feature-icon {
+            font-size: 40px;
+            margin-bottom: 15px;
+        }
+
+        .feature-card h3 {
+            color: #495057;
+            margin-bottom: 10px;
+            font-size: 20px;
+        }
+
+        .feature-card p {
+            color: #6c757d;
+            line-height: 1.6;
+        }
+
+        .social-links {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .social-links h2 {
+            color: #495057;
+            margin-bottom: 20px;
+        }
+
+        .social-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .social-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: transform 0.2s;
+        }
+
+        .social-button:hover {
+            transform: translateY(-2px);
+        }
+
+        .telegram { background: #0088cc; color: white; }
+        .twitter { background: #1da1f2; color: white; }
+        .facebook { background: #1877f2; color: white; }
+        .instagram { background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); color: white; }
+        .pinterest { background: #e60023; color: white; }
+
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            padding: 20px;
+        }
+
+        .footer-links {
+            margin-top: 10px;
+        }
+
+        .footer-links a {
+            color: white;
+            text-decoration: none;
+            margin: 0 10px;
+            opacity: 0.9;
+        }
+
+        .footer-links a:hover {
+            opacity: 1;
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 32px; }
+            .header { padding: 40px 20px; }
+            .features { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">AB</div>
+            <h1>Amazon Affiliate Bot</h1>
+            <p class="tagline">AI-Powered Product Discovery & Social Media Automation</p>
+            <a href="#features" class="cta-button">Explore Features</a>
+        </div>
+
+        <!-- Features -->
+        <div class="features" id="features">
+            <div class="feature-card">
+                <div class="feature-icon">🔍</div>
+                <h3>Trending Discovery</h3>
+                <p>Automatically discover trending Amazon products using Best Sellers data, Google Trends, and social media signals.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <h3>AI Content Generation</h3>
+                <p>Generate product summaries, SEO titles, social media posts, and blog outlines automatically using AI.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">📱</div>
+                <h3>Social Automation</h3>
+                <p>Publish affiliate content to Telegram, Twitter, Facebook, Instagram, Pinterest, and TikTok automatically.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>Price Tracking</h3>
+                <p>Monitor Amazon prices 24/7. Get instant alerts when products drop 10% or more.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🎯</div>
+                <h3>Niche Focus</h3>
+                <p>Specialized in AI/Edge Computing, SBCs, and maker electronics: Raspberry Pi, NVIDIA Jetson, Arduino.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">💰</div>
+                <h3>Affiliate Links</h3>
+                <p>Every product includes Amazon affiliate links. Earn commissions on every sale through your content.</p>
+            </div>
+        </div>
+
+        <!-- Social Links -->
+        <div class="social-links">
+            <h2>Connect With Us</h2>
+            <div class="social-buttons">
+                <a href="https://t.me/your_bot" class="social-button telegram">
+                    <span>✈️</span> Telegram
+                </a>
+                <a href="https://twitter.com/your_handle" class="social-button twitter">
+                    <span>🐦</span> Twitter
+                </a>
+                <a href="https://facebook.com/your_page" class="social-button facebook">
+                    <span>📘</span> Facebook
+                </a>
+                <a href="https://instagram.com/your_handle" class="social-button instagram">
+                    <span>📸</span> Instagram
+                </a>
+                <a href="https://pinterest.com/your_handle" class="social-button pinterest">
+                    <span>📌</span> Pinterest
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>© 2026 Amazon Affiliate Bot by David Adam. All rights reserved.</p>
+            <div class="footer-links">
+                <a href="privacy-policy.html">Privacy Policy</a>
+                <a href="https://david-adam.me">Personal Blog</a>
+                <a href="mailto:DAVID.G.ADAM@GMAIL.COM">Contact</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

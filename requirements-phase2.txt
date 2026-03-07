@@ -1,0 +1,22 @@
+# ProductLens AI - Phase 2 Python Dependencies
+
+# Google Drive API
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.0.0
+
+# Image processing
+Pillow>=10.0.0
+
+# HTTP requests
+requests>=2.31.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Database (already installed)
+# libsql>=0.3.0  # Turso database
+# scrape-do     # Already installed
+
+# Web scraping (already installed)
+# beautifulsoup4>=4.12.0
+# lxml>=4.9.0

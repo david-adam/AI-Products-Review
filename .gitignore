@@ -41,6 +41,11 @@ htmlcov/
 *~
 .vercel
 
+# Google Drive OAuth
+oauth_credentials.json
+.google_drive_token.json
+google-drive-credentials.json
+
 # Local Admin Tools (DO NOT DEPLOY TO VERCEL)
 social_push.html
 products_with_content.json

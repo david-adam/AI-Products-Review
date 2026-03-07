@@ -57,15 +57,20 @@ class ScrapeDoClient:
 
         try:
             response = requests.get(
-                self.BASE_URL,
+                self.BASE_URL + "/",
                 params=params,
                 timeout=timeout
             )
             response.raise_for_status()
 
-            # Check for API errors in response
-            if 'error' in response.text.lower():
-                raise ScrapeDoError(f"Scrape.do API error in response")
+            # Check for API errors in JSON response
+            try:
+                json_data = response.json()
+                if 'error' in json_data:
+                    raise ScrapeDoError(f"Scrape.do API error: {json_data['error']}")
+            except ValueError:
+                # Not a JSON response, treat as HTML
+                pass
 
             return response.text
 
@@ -73,8 +78,10 @@ class ScrapeDoClient:
             error_msg = f"HTTP error from Scrape.do: {e}"
             if response.status_code == 401:
                 error_msg = "Invalid API key"
+            elif response.status_code == 403:
+                error_msg = "Access denied - check API key permissions"
             elif response.status_code == 429:
-                error_msg = "Rate limit exceeded (1,000 requests/month on free tier)"
+                error_msg = "Rate limit exceeded"
             raise ScrapeDoError(error_msg)
 
         except requests.exceptions.ConnectionError as e:

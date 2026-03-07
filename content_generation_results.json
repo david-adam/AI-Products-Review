@@ -1,0 +1,13 @@
+[
+  {
+    "product_id": 1,
+    "product_name": "Logitech MX Master 3S Wireless Mouse",
+    "success": false,
+    "review": null,
+    "social_posts": {},
+    "images": {},
+    "errors": [
+      "Review generation failed: Request failed: 401 Client Error: Unauthorized for url: https://api.moonshot.cn/v1/chat/completions"
+    ]
+  }
+]
