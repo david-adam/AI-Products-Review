@@ -40,7 +40,7 @@ class TursoDatabase:
         body = {"statements": [{"q": sql}]}
 
         if params:
-            body["statements"][0]["args"] = params
+            body["statements"][0]["params"] = params
 
         response = requests.post(self.db_url, headers=self.headers, json=body)
         response.raise_for_status()

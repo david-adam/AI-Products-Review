@@ -186,77 +186,110 @@ Aspect ratio: {config['aspect_ratio']}
         data = response.json()
         
         # Clean up temp file
-        os.unlink(ref_image_path)
+        if os.path.exists(ref_image_path):
+            os.unlink(ref_image_path)
         
-        # Check for image in response
+        # Check for image in response - try multiple formats
         if 'choices' in data and len(data['choices']) > 0:
             choice = data['choices'][0]
             
-            # Check for image_url (Abacus.AI returns hosted URL)
             if 'message' in choice:
                 message = choice['message']
                 
-                # Look for image_url first
-                if 'images' in message and len(message['images']) > 0:
-                    image_obj = message['images'][0]
-                    
-                    # Check if it's the new format with nested image_url
-                    if 'image_url' in image_obj and isinstance(image_obj['image_url'], dict):
-                        url = image_obj['image_url'].get('url')
-                        if url:
-                            # Check if it's a hosted URL or base64 data URL
-                            if url.startswith('data:image'):
-                                # Base64 data URL - extract the data
-                                image_data = url.split(',', 1)[1] if ',' in url else url.split(':', 1)[1]
-                                return {
-                                    'success': True,
-                                    'image_url': None,
-                                    'image_data': image_data,
-                                    'aspect_ratio': config['aspect_ratio'],
-                                    'error': None
-                                }
-                            else:
-                                # Regular hosted URL
-                                return {
-                                    'success': True,
-                                    'image_url': url,
-                                    'image_data': None,
-                                    'aspect_ratio': config['aspect_ratio'],
-                                    'error': None
-                                }
-                    
-                    # Legacy format: direct image_url string
-                    elif 'url' in image_obj:
-                        url = image_obj['url']
-                        if url.startswith('data:image'):
-                            image_data = url.split(',', 1)[1] if ',' in url else url.split(':', 1)[1]
-                            return {
-                                'success': True,
-                                'image_url': None,
-                                'image_data': image_data,
-                                'aspect_ratio': config['aspect_ratio'],
-                                'error': None
-                            }
-                        else:
-                            return {
-                                'success': True,
-                                'image_url': url,
-                                'image_data': None,
-                                'aspect_ratio': config['aspect_ratio'],
-                                'error': None
-                            }
+                # Format 1: Check for images array (Abacus.AI standard format)
+                # Structure: message.images[0].image_url.url
+                if 'images' in message and message['images']:
+                    for img_obj in message['images']:
+                        if isinstance(img_obj, dict):
+                            # Try nested image_url format
+                            if 'image_url' in img_obj:
+                                url = img_obj['image_url'].get('url') if isinstance(img_obj['image_url'], dict) else img_obj['image_url']
+                                if url:
+                                    if url.startswith('data:image'):
+                                        # Base64 data URL - extract the data
+                                        image_data = url.split(',', 1)[1] if ',' in url else None
+                                        if image_data:
+                                            return {
+                                                'success': True,
+                                                'image_url': None,
+                                                'image_data': image_data,
+                                                'aspect_ratio': config['aspect_ratio'],
+                                                'error': None
+                                            }
+                                    else:
+                                        # Regular hosted URL
+                                        return {
+                                            'success': True,
+                                            'image_url': url,
+                                            'image_data': None,
+                                            'aspect_ratio': config['aspect_ratio'],
+                                            'error': None
+                                        }
+                            
+                            # Try direct url field
+                            if 'url' in img_obj:
+                                url = img_obj['url']
+                                if url:
+                                    if url.startswith('data:image'):
+                                        image_data = url.split(',', 1)[1] if ',' in url else None
+                                        if image_data:
+                                            return {
+                                                'success': True,
+                                                'image_url': None,
+                                                'image_data': image_data,
+                                                'aspect_ratio': config['aspect_ratio'],
+                                                'error': None
+                                            }
+                                    else:
+                                        return {
+                                            'success': True,
+                                            'image_url': url,
+                                            'image_data': None,
+                                            'aspect_ratio': config['aspect_ratio'],
+                                            'error': None
+                                        }
                 
-                # Fallback: check content field for data URL
-                if 'content' in message and isinstance(message['content'], str) and message['content'].startswith('data:image'):
-                    image_data = message['content'].split(',', 1)[1]
-                    return {
-                        'success': True,
-                        'image_url': None,
-                        'image_data': image_data,
-                        'aspect_ratio': config['aspect_ratio'],
-                        'error': None
-                    }
+                # Format 2: Check content field for data URL (legacy/fallback)
+                if 'content' in message:
+                    content = message['content']
+                    if isinstance(content, str) and content.startswith('data:image'):
+                        image_data = content.split(',', 1)[1] if ',' in content else content
+                        return {
+                            'success': True,
+                            'image_url': None,
+                            'image_data': image_data,
+                            'aspect_ratio': config['aspect_ratio'],
+                            'error': None
+                        }
+                    elif isinstance(content, list):
+                        # Content might be a list of content blocks
+                        for block in content:
+                            if isinstance(block, dict):
+                                if block.get('type') == 'image_url':
+                                    img_url = block.get('image_url', {})
+                                    if isinstance(img_url, dict):
+                                        url = img_url.get('url', '')
+                                        if url:
+                                            if url.startswith('data:image'):
+                                                image_data = url.split(',', 1)[1] if ',' in url else None
+                                                if image_data:
+                                                    return {
+                                                        'success': True,
+                                                        'image_url': None,
+                                                        'image_data': image_data,
+                                                        'aspect_ratio': config['aspect_ratio'],
+                                                        'error': None
+                                                    }
+                                            else:
+                                                return {
+                                                    'success': True,
+                                                    'image_url': url,
+                                                    'image_data': None,
+                                                    'aspect_ratio': config['aspect_ratio'],
+                                                    'error': None
+                                                }
         
+        # No image found - return error with response for debugging
         return {
             'success': False,
             'error': 'No image in response',

@@ -7,7 +7,7 @@ Main orchestration script that:
 2. Generates AI reviews (Kimi K2.5)
 3. Generates social posts (Kimi K2.5)
 4. Generates images (Abacus.AI)
-5. Saves images to Google Drive
+5. Saves images to Google Drive (ProductLens folder)
 6. Updates Turso database
 
 Usage:
@@ -17,15 +17,24 @@ Usage:
 import os
 import sys
 import json
+import logging
+import tempfile
 import argparse
 from dotenv import load_dotenv
 
 # Add scripts directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 from kimi_text_gen import generate_product_review, generate_social_post
-from abacus_image_gen import generate_product_image, save_image
-from google_drive import upload_to_drive
+from abacus_image_gen_v2 import generate_image_with_reference
+from google_drive import upload_to_drive, GOOGLE_DRIVE_FOLDER_ID
 
 # Load environment variables
 load_dotenv()
@@ -54,12 +63,13 @@ def process_product(product, enabled_platforms=None):
         'errors': []
     }
     
-    print(f"\n{'='*60}")
-    print(f"Processing: {product.get('name')}")
-    print(f"{'='*60}")
+    logger.info(f"Processing: {product.get('name')}")
+    
+    # Get product image URL if available
+    product_image_url = product.get('image_url') or product.get('main_image')
     
     # Step 1: Generate Product Review
-    print("\n[1/4] Generating product review...")
+    logger.info("[1/4] Generating product review...")
     review_result = generate_product_review(
         product_name=product.get('name'),
         product_category=product.get('category', 'Electronics'),
@@ -73,18 +83,18 @@ def process_product(product, enabled_platforms=None):
             'summary': review_result['summary'],
             'full': review_result['full_review']
         }
-        print(f"✅ Review generated ({len(review_result['summary'].split())} words summary, {len(review_result['full_review'].split())} words full)")
+        logger.info(f"✅ Review generated ({len(review_result['summary'].split())} words summary)")
     else:
         error_msg = f"Review generation failed: {review_result.get('error')}"
         results['errors'].append(error_msg)
-        print(f"❌ {error_msg}")
+        logger.error(f"❌ {error_msg}")
         return results
     
     # Step 2: Generate Social Posts
-    print(f"\n[2/4] Generating social posts for: {', '.join(enabled_platforms)}")
+    logger.info(f"[2/4] Generating social posts for: {', '.join(enabled_platforms)}")
     
     for platform in enabled_platforms:
-        print(f"  - {platform}...", end=' ')
+        logger.info(f"  - {platform}...", extra={'end': ' '})
         
         post_result = generate_social_post(
             product_name=product.get('name'),
@@ -99,72 +109,118 @@ def process_product(product, enabled_platforms=None):
                 'hashtags': post_result['hashtags'],
                 'image_prompt': post_result['image_prompt']
             }
-            print(f"✅ ({len(post_result['post_text'])} chars)")
+            logger.info(f"✅ ({len(post_result['post_text'])} chars)")
         else:
             error_msg = f"{platform} failed: {post_result.get('error')}"
             results['errors'].append(error_msg)
-            print(f"❌ {error_msg}")
+            logger.error(f"❌ {error_msg}")
     
     # Step 3: Generate Images
-    print(f"\n[3/4] Generating images for: {', '.join(enabled_platforms)}")
+    logger.info(f"[3/4] Generating images for: {', '.join(enabled_platforms)}")
     
     for platform in enabled_platforms:
         if platform not in results['social_posts']:
             continue
         
-        print(f"  - {platform}...", end=' ')
+        logger.info(f"  - {platform}...", extra={'end': ' '})
         
-        image_result = generate_product_image(
-            product_name=product.get('name'),
-            product_category=product.get('category', 'Electronics'),
-            platform=platform,
-            features=product.get('features', []).split(',') if product.get('features') else []
-        )
+        # Use v2 with reference image if available, otherwise use text-only
+        if product_image_url:
+            image_result = generate_image_with_reference(
+                product_image_url=product_image_url,
+                platform=platform,
+                product_name=product.get('name'),
+                product_category=product.get('category', 'Electronics')
+            )
+        else:
+            # Fallback to text-only generation (import from abacus_image_gen)
+            from abacus_image_gen import generate_product_image
+            image_result = generate_product_image(
+                product_name=product.get('name'),
+                product_category=product.get('category', 'Electronics'),
+                platform=platform,
+                features=product.get('features', []).split(',') if product.get('features') else []
+            )
         
         if image_result['success']:
-            # Save image temporarily
-            import tempfile
+            # Save image to temp file
+            try:
+                import base64
+                
+                ext = 'png'
+                with tempfile.NamedTemporaryFile(suffix=f'.{ext}', delete=False) as tmp:
+                    temp_path = tmp.name
+                
+                # Extract image data from result
+                image_data = image_result.get('image_data')
+                if not image_data:
+                    error_msg = f"{platform} no image data in response"
+                    results['errors'].append(error_msg)
+                    logger.error(f"❌ {error_msg}")
+                    return results
+                
+                # Remove data URL prefix if present
+                if image_data.startswith('data:image/'):
+                    image_data = image_data.split(',', 1)[1]
+                
+                # Save to temp file
+                with open(temp_path, 'wb') as f:
+                    f.write(base64.b64decode(image_data))
+                
+                logger.info(f"Image saved to temp: {temp_path}")
+                
+            except Exception as e:
+                error_msg = f"{platform} image save failed: {str(e)}"
+                results['errors'].append(error_msg)
+                logger.error(f"❌ {error_msg}")
+                continue
             
-            ext = 'png'
-            with tempfile.NamedTemporaryFile(suffix=f'.{ext}', delete=False) as tmp:
-                temp_path = tmp.name
-            
-            if save_image(image_result['image_data'], temp_path):
-                # Upload to Google Drive
+            # Upload to Google Drive (ProductLens folder by default)
+            try:
                 filename = f"{product.get('id')}-{platform}.{ext}"
-                drive_result = upload_to_drive(temp_path, file_name=filename)
+                drive_result = upload_to_drive(
+                    temp_path, 
+                    folder_id=GOOGLE_DRIVE_FOLDER_ID,  # Use ProductLens folder
+                    file_name=filename
+                )
                 
                 if drive_result:
                     results['images'][platform] = {
                         'direct_url': drive_result['direct_url'],
                         'view_url': drive_result['view_url'],
+                        'public_url': drive_result['public_url'],
                         'file_id': drive_result['file_id']
                     }
-                    print(f"✅ (uploaded)")
-                    
-                    # Clean up temp file
-                    os.unlink(temp_path)
+                    logger.info(f"✅ Uploaded to ProductLens Drive folder")
                 else:
-                    error_msg = f"{platform} image upload failed"
+                    error_msg = f"{platform} image upload failed (retries exhausted)"
                     results['errors'].append(error_msg)
-                    print(f"❌ {error_msg}")
-                    os.unlink(temp_path)
-            else:
-                error_msg = f"{platform} image save failed"
+                    logger.error(f"❌ {error_msg}")
+                    
+            except Exception as e:
+                error_msg = f"{platform} image upload error: {str(e)}"
                 results['errors'].append(error_msg)
-                print(f"❌ {error_msg}")
+                logger.error(f"❌ {error_msg}")
+            
+            # Clean up temp file
+            try:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+            except Exception as e:
+                logger.warning(f"Could not clean up temp file: {e}")
+                
         else:
             error_msg = f"{platform} image generation failed: {image_result.get('error')}"
             results['errors'].append(error_msg)
-            print(f"❌ {error_msg}")
+            logger.error(f"❌ {error_msg}")
     
     # Step 4: Save to Database
-    print(f"\n[4/4] Saving to database...")
+    logger.info("[4/4] Saving to database...")
     
     # TODO: Implement Turso database update
     # save_to_turso(results)
     
-    print("✅ Database update (TODO)")
+    logger.info("✅ Database update (TODO)")
     
     results['success'] = len(results['errors']) == 0
     
