@@ -52,3 +52,8 @@ products_with_content.json
 ai_generated_content.json
 products_scraped.json
 logs/
+
+# Memory and log files
+memory/*.log
+memory/autonomous_work.log
+*.log
